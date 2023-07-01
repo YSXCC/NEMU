@@ -17,14 +17,6 @@
 
 #define NR_WP 32
 
-typedef struct watchpoint {
-  int NO;
-  struct watchpoint *next;
-
-  /* TODO: Add more members if necessary */
-
-} WP;
-
 static WP wp_pool[NR_WP] = {};
 static WP *head = NULL, *free_ = NULL;
 
@@ -41,3 +33,90 @@ void init_wp_pool() {
 
 /* TODO: Implement the functionality of watchpoint */
 
+WP* new_wp() {
+  if (free_ == NULL) {
+    printf("There is no free wathpoint now!");
+		assert(0);
+  }
+
+  WP *temp;
+  temp = free_;
+  free_ = free_->next;
+  temp->next = NULL;
+  if (head == NULL) {
+    head = temp;
+  } else {
+    WP *temp2;
+    temp2 = head;
+    while (temp2->next != NULL) {
+      temp2 = temp2->next;
+    }
+    temp2->next = temp;
+  }
+  return temp;
+}
+
+WP* get_wp(int n) {
+  WP *wp = head;
+  while (wp != NULL) {
+    if (wp->NO == n) {
+      return wp;
+    }
+    wp = wp->next;
+  }
+  return NULL;
+}
+
+void free_wp(int n) {
+  WP *wp = get_wp(n);
+  if (wp == NULL) {
+    assert(0);
+  }
+  if (wp == head) {
+    head = head->next;
+  } else {
+    WP *temp = head;
+    while (temp != NULL && temp->next != wp) {
+      temp = temp->next;
+    }
+    temp->next = temp->next->next;
+  }
+  wp->next = free_;
+  free_ = wp;
+  wp->in_val = 0;
+  memset(wp->expr, '\0', 64);
+}
+
+bool check_watchpoints() {
+  WP *tmp = head;
+	bool success = true;
+	bool changed = false;
+  word_t tmp_val;
+  if (tmp == NULL) {
+    printf("Watchpoint is NULL!\n");
+  }
+		
+  while(tmp != NULL) {
+    printf("Watchpoint[%d].expr = %s\n",tmp->NO,tmp->expr);
+    tmp_val = expr(tmp->expr, &success);
+    if (tmp->in_val != tmp_val) {
+      changed = true;
+      printf("watchpoint %d has changed, from 0x%x to 0x%x\n", tmp->NO, tmp->in_val, tmp_val);
+      tmp->in_val = tmp_val;
+    }
+    tmp = tmp->next;
+  }
+  return changed;
+}
+
+void info_w() {
+  WP *tmp_p1 = head;
+  if (tmp_p1 == NULL) {
+    printf("There are no watchpoints in use!\n");
+    return;
+  }
+  while (tmp_p1 != NULL) {
+    printf("Watchpoint[%d] = %u (0x%x)\n",tmp_p1->NO,tmp_p1->in_val,tmp_p1->in_val);
+    tmp_p1 = tmp_p1->next;
+  }
+}
