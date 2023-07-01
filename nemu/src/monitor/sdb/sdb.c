@@ -18,11 +18,17 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "sdb.h"
+#include "isa.h"
+#include <memory/vaddr.h>
+#include <stddef.h>
+
 
 static int is_batch_mode = false;
 
 void init_regex();
 void init_wp_pool();
+
+void info_w();
 
 /* We use the `readline' library to provide more flexibility to read from stdin. */
 static char* rl_gets() {
@@ -49,10 +55,84 @@ static int cmd_c(char *args) {
 
 
 static int cmd_q(char *args) {
+  cpu_quit();
   return -1;
 }
 
 static int cmd_help(char *args);
+
+static int cmd_si(char *args) {
+  char *arg = strtok(args, " ");
+  if (arg == NULL) {
+    cpu_exec(1);
+  } else {
+    int number = atoi(arg);
+    cpu_exec((uint64_t)number);
+  }
+  
+  return 0;
+}
+
+static int cmd_info(char *args) {
+  if (*args == 'r') {
+    isa_reg_display();
+  } else if (*args == 'w') {
+    info_w();
+  } else {
+    printf("Please input r or w !\n");
+  }
+
+  return 0;
+}
+
+static int cmd_x(char *args) {
+  char *pend;
+
+  int size = strtol(args, &pend, 10);
+  vaddr_t addr = strtol(pend, NULL, 16);
+  
+  for (int i = 0; i < size; i++) {
+    word_t data = vaddr_read(addr + i * 4, 4);
+    printf("0x%08x  " , addr + i * 4 );
+    for(int j =0 ; j < 4 ; j++){
+      printf("0x%02x " , data & 0xff);
+      data = data >> 8 ;
+    }
+    printf("\n");
+  }
+  return 0;
+}
+
+static int cmd_p(char *args) {
+  bool success;
+  word_t res = expr(args, &success);
+  if (!success) {
+    puts("invalid expression");
+  } else {
+    printf("%u\n", res);
+  }
+  return 0;
+}
+
+static int cmd_w(char *args) {
+  bool success = true;
+  WP *tmp_wp = new_wp();
+  strcpy(tmp_wp->expr, args);
+  tmp_wp->in_val = expr(args, &success);
+  printf("Watchpoint[%d] is set up on %s now.\n",tmp_wp->NO, tmp_wp->expr);
+  return 0;
+}
+
+static int cmd_d(char *args) {
+  if (args == NULL) {
+    printf("Need the NO of the watchpoint!\n");
+  } else {
+    int n;
+    sscanf(args, "%d", &n);
+    free_wp(n);
+  }
+  return 0;
+}
 
 static struct {
   const char *name;
@@ -64,7 +144,12 @@ static struct {
   { "q", "Exit NEMU", cmd_q },
 
   /* TODO: Add more commands */
-
+  { "si", "Let the program pause execution after stepping into an instruction", cmd_si },
+  { "info", "Print registers status(info r) or watchpoints info(info w)", cmd_info},
+  { "x", "Print address memory", cmd_x},
+  { "p", "Find the value of the expression", cmd_p},
+  { "w", "Set up a new watchpoint", cmd_w},
+  { "d", "Free the Watchpoint", cmd_d},
 };
 
 #define NR_CMD ARRLEN(cmd_table)
