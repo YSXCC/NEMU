@@ -79,13 +79,11 @@ static int decode_exec(Decode *s) {
 
 #ifdef CONFIG_FTRACE
 #define FTRACEJAL(s) { \
-
 }
 #endif
 
 #ifdef CONFIG_FTRACE
 #define FTRACEJALR(s) { \
-
 }
 #endif
 
