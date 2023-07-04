@@ -30,6 +30,10 @@ uint64_t g_nr_guest_inst = 0;
 static uint64_t g_timer = 0; // unit: us
 static bool g_print_step = false;
 
+// To realize iringbuf
+char inst_buf[20][50];
+uint32_t current_inst=0;
+
 void device_update();
 
 bool check_watchpoints();
@@ -50,7 +54,7 @@ static void exec_once(Decode *s, vaddr_t pc) {
   isa_exec_once(s);
   cpu.pc = s->dnpc;
 #ifdef CONFIG_ITRACE
-  char *p = s->logbuf;
+  char *p = s->logbuf, *q = p;
   p += snprintf(p, sizeof(s->logbuf), FMT_WORD ":", s->pc);
   int ilen = s->snpc - s->pc;
   int i;
@@ -72,6 +76,11 @@ static void exec_once(Decode *s, vaddr_t pc) {
 #else
   p[0] = '\0'; // the upstream llvm does not support loongarch32r
 #endif
+  // Record instructions
+  strcpy(inst_buf[current_inst], q);
+  current_inst++;
+  // iringbuf
+  current_inst %= 20;
 #endif
 }
 
@@ -95,7 +104,21 @@ static void statistic() {
   else Log("Finish running in less than 1 us and can not calculate the simulation frequency");
 }
 
+void iringbuf() {
+  for(int i = 0; i < 20; i++){
+    if( i == current_inst - 1 ){
+      printf("-->\t");
+    } else {
+      printf("\t");
+    }
+    printf("%s", inst_buf[i]);
+    printf("\n");
+  }
+  printf("\n");
+}
+
 void assert_fail_msg() {
+  iringbuf();
   isa_reg_display();
   statistic();
 }
