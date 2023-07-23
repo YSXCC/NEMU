@@ -119,7 +119,28 @@ int vsnprintf(char *out, size_t n, const char *fmt, va_list ap) {
             for (int k = len - 1; k >= 0; --k)
               append(buffer[k]);
             break;  
-
+          
+          case '0':
+            int zero_nums = fmt[i+1] - '0';
+            num = va_arg(ap, int);
+            if(num == 0){
+              for (int znum = 0; znum < zero_nums; znum++)
+                append('0');
+              i += 2;
+              break;
+            }
+            if (num < 0){
+              append('-');
+              num = 0 - num;
+            }
+            for (len = 0; num ; num /= 10, ++len)
+              buffer[len] = HEX_CHARACTERS[num % 10];//逆序的
+            for(int b = len; b < zero_nums ; b++)
+              append('0');
+            for (int k = len - 1; k >= 0; --k)
+              append(buffer[k]);
+            i += 2;
+            break;
           default:
             assert(0);
         }
