@@ -32,8 +32,9 @@
   static uint32_t print_tabnum = 0;
 
   void print_tab() {
+    printf(":");
     for (int i = 0; i < print_tabnum; i++){
-      printf(": ");
+      printf(" ");
     }
   }
 #endif
@@ -94,11 +95,11 @@ static int decode_exec(Decode *s) {
   if (name != NULL) {\
     printf(FMT_PADDR, now_pc);\
     print_tab();\
-    printf("call [%s@" FMT_PADDR "]\n", name, next_pc);\
+    printf(" call [%s@" FMT_PADDR "]\n", name, next_pc);\
   } else {\
     printf(FMT_PADDR, now_pc);\
     print_tab();\
-    printf("call [???@" FMT_PADDR "]\n", next_pc);\
+    printf(" call [???@" FMT_PADDR "]\n", next_pc);\
   }\
   print_tabnum++;\
 }
@@ -125,11 +126,11 @@ static int decode_exec(Decode *s) {
     if (name != NULL) {\
       printf(FMT_PADDR, now_pc);\
       print_tab();\
-      printf("call [%s@" FMT_PADDR "]\n", name, next_pc);\
+      printf(" call [%s@" FMT_PADDR "]\n", name, next_pc);\
     } else {\
       printf(FMT_PADDR, now_pc);\
       print_tab();\
-      printf("call [???@" FMT_PADDR "]\n", next_pc);\
+      printf(" call [???@" FMT_PADDR "]\n", next_pc);\
     }\
     print_tabnum++;\
   }\
