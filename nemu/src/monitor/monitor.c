@@ -15,7 +15,7 @@
 
 #include <isa.h>
 #include <memory/paddr.h>
-#include <elf.h>
+#include <ftrace.h>
 
 void init_rand();
 void init_log(const char *log_file);
@@ -49,128 +49,10 @@ static int difftest_port = 1234;
 
 static char *elf_file = NULL;
 
-elf_func_symbol func_symbol[128];
-uint32_t func_symbol_number;
-
-static void load_elf(char *img_file) {
-    if (img_file == NULL) {
-        Log("No ELF file is given.");
-        return;
-    }
-
-    FILE *fp = fopen(img_file, "rb");
-    Assert(fp, "Can not open '%s'", img_file);
-
-    fseek(fp, 0, SEEK_END);
-    long size = ftell(fp);
-
-    uint8_t *elf = malloc(size * sizeof(uint8_t));
-    Log("The ELF file is %s, size = %ld", img_file, size);
-
-    fseek(fp, 0, SEEK_SET);
-
-    int ret = fread(elf, size, 1, fp);
-    assert(ret == 1);
-    fclose(fp);
-
-
-    uint32_t sector_header_index  = 0;
-    uint32_t sector_header_length = 0; // the size of one section
-    uint32_t sector_header_number = 0;
-
-    for (uint32_t i = 35; i >= 32; --i)
-        sector_header_index = sector_header_index * 256 + elf[i];
-
-    for (uint32_t i = 47; i >= 46; --i)
-        sector_header_length = sector_header_length * 256 + elf[i];
-
-    for (uint32_t i = 49; i >= 48; --i)
-        sector_header_number = sector_header_number * 256 + elf[i];
-
-    uint32_t symbol_table_index = 0;
-    uint32_t symbol_table_size  = 0;
-    uint32_t string_table_index = 0;
-    uint32_t string_table_size  = 0;
-
-    for (uint32_t i = 0; i < sector_header_number; ++i) {
-        uint32_t type = 0;
-        type = type * 256 + elf[sector_header_index + i * sector_header_length + 5];
-        type = type * 256 + elf[sector_header_index + i * sector_header_length + 4];
-
-        if (type == 2) {
-            symbol_table_index = symbol_table_index * 256 + elf[sector_header_index + i * sector_header_length + 19];
-            symbol_table_index = symbol_table_index * 256 + elf[sector_header_index + i * sector_header_length + 18];
-            symbol_table_index = symbol_table_index * 256 + elf[sector_header_index + i * sector_header_length + 17];
-            symbol_table_index = symbol_table_index * 256 + elf[sector_header_index + i * sector_header_length + 16];
-
-            symbol_table_size = symbol_table_size * 256 + elf[sector_header_index + i * sector_header_length + 23];
-            symbol_table_size = symbol_table_size * 256 + elf[sector_header_index + i * sector_header_length + 22];
-            symbol_table_size = symbol_table_size * 256 + elf[sector_header_index + i * sector_header_length + 21];
-            symbol_table_size = symbol_table_size * 256 + elf[sector_header_index + i * sector_header_length + 20];
-        } else if (type == 3) {
-            string_table_index = string_table_index * 256 + elf[sector_header_index + i * sector_header_length + 19];
-            string_table_index = string_table_index * 256 + elf[sector_header_index + i * sector_header_length + 18];
-            string_table_index = string_table_index * 256 + elf[sector_header_index + i * sector_header_length + 17];
-            string_table_index = string_table_index * 256 + elf[sector_header_index + i * sector_header_length + 16];
-
-            string_table_size  = string_table_size * 256 + elf[sector_header_index + i * sector_header_length + 23];
-            string_table_size  = string_table_size * 256 + elf[sector_header_index + i * sector_header_length + 22];
-            string_table_size  = string_table_size * 256 + elf[sector_header_index + i * sector_header_length + 21];
-            string_table_size  = string_table_size * 256 + elf[sector_header_index + i * sector_header_length + 20];
-        }
-
-        if (symbol_table_index && string_table_index) // assume 
-            break;
-    }
-
-    func_symbol_number = 0;
-    for (uint32_t i = 0; i < symbol_table_size / 16; ++i) {
-        if ((elf[symbol_table_index + i * 16 + 12] & 0x0f) == 2) {
-            vaddr_t value = 0;
-            uint32_t size = 0;
-            uint32_t string_index = 0;
-
-            string_index = string_index * 256 + elf[symbol_table_index + i * 16 + 3];
-            string_index = string_index * 256 + elf[symbol_table_index + i * 16 + 2];
-            string_index = string_index * 256 + elf[symbol_table_index + i * 16 + 1];
-            string_index = string_index * 256 + elf[symbol_table_index + i * 16 + 0];
-
-            value = value * 256 + elf[symbol_table_index + i * 16 + 7];
-            value = value * 256 + elf[symbol_table_index + i * 16 + 6];
-            value = value * 256 + elf[symbol_table_index + i * 16 + 5];
-            value = value * 256 + elf[symbol_table_index + i * 16 + 4];
-
-            size = size * 256 + elf[symbol_table_index + i * 16 + 11];
-            size = size * 256 + elf[symbol_table_index + i * 16 + 10];
-            size = size * 256 + elf[symbol_table_index + i * 16 + 9];
-            size = size * 256 + elf[symbol_table_index + i * 16 + 8];
-
-            func_symbol[func_symbol_number].value = value;
-            func_symbol[func_symbol_number].size = size;
-            func_symbol[func_symbol_number].string_index = string_index;
-
-            func_symbol_number++;
-            if (func_symbol_number >= 128) {
-                Log("Function symbol storage limit exceeded.");
-                break;
-            }
-        }
-    }
-
-    for (uint32_t i = 0; i < func_symbol_number; ++i) {
-        uint32_t string_index_st = func_symbol[i].string_index;
-        uint32_t string_index_ed = string_index_st;
-        while(elf[string_table_index + string_index_ed])
-            string_index_ed++;
-        if (string_index_ed - string_index_st + 1 > 256)
-            panic("Function name is too long");
-        strncpy(func_symbol[i].name, (const char *)&elf[string_table_index + string_index_st], string_index_ed - string_index_st + 1);
-        Assert(func_symbol[i].name[string_index_ed - string_index_st + 1] == '\0', "The string does not terminate with a zero character.");
-    }
-
-    free(elf);
-    return;
-}
+#ifdef CONFIG_FTRACE
+FunctionInfo functions[128];
+uint32_t num_functions = 0;
+#endif
 
 static long load_img() {
   if (img_file == NULL) {
@@ -249,8 +131,8 @@ void init_monitor(int argc, char *argv[]) {
   init_isa();
 
   /* Load the elf of image. This will help us to get function trace. */
-  IFDEF(CONFIG_FTRACE, load_elf(elf_file));
-
+  IFDEF(CONFIG_FTRACE, load_elf(elf_file, functions, &num_functions));
+  
   /* Load the image to memory. This will overwrite the built-in image. */
   long img_size = load_img();
 

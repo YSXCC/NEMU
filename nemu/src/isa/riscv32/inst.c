@@ -19,14 +19,22 @@
 #include <cpu/decode.h>
 
 #ifdef CONFIG_FTRACE
-  #include <elf.h>
+  #include <ftrace.h>
 
   const char *get_func_name(vaddr_t addr) {
-    for (uint32_t i = 0; i < func_symbol_number; ++i) {
-      if (func_symbol[i].value <= addr && addr < func_symbol[i].value + func_symbol[i].size)
-        return func_symbol[i].name;
+    for (uint32_t i = 0; i < num_functions; ++i) {
+      if (functions[i].start_addr <= addr && addr < functions[i].start_addr + functions[i].size)
+        return functions[i].name;
       }
     return NULL;
+  }
+
+  static uint32_t print_tabnum = 0;
+
+  void print_tab() {
+    for (int i = 0; i < print_tabnum; i++){
+      printf(": ");
+    }
   }
 #endif
 
@@ -78,12 +86,53 @@ static int decode_exec(Decode *s) {
 }
 
 #ifdef CONFIG_FTRACE
-#define FTRACEJAL(s) { \
-}
-#endif
 
-#ifdef CONFIG_FTRACE
+#define FTRACEJAL(s) { \
+  vaddr_t now_pc = s->pc;\
+  vaddr_t next_pc = imm + s->pc;\
+  const char *name =  get_func_name(next_pc);\
+  if (name != NULL) {\
+    printf(FMT_PADDR, now_pc);\
+    print_tab();\
+    printf("call [%s@" FMT_PADDR "]\n", name, next_pc);\
+  } else {\
+    printf(FMT_PADDR, now_pc);\
+    print_tab();\
+    printf("call [???@" FMT_PADDR "]\n", next_pc);\
+  }\
+  print_tabnum++;\
+}
+
 #define FTRACEJALR(s) { \
+  vaddr_t now_pc = s->pc;\
+  vaddr_t next_pc = (src1 + imm) & (~1);\
+  uint32_t i = s->isa.inst.val;\
+  int rs1 = BITS(i, 19, 15);\
+  if(rd == 0 && rs1 == 1) { \
+    const char *name = get_func_name(now_pc); \
+    if (name != NULL) { \
+      printf(FMT_PADDR,now_pc);\
+      print_tab();\
+      printf("ret  [%s]\n", name);\
+    } else {\
+      printf(FMT_PADDR,now_pc);\
+      print_tab();\
+      printf("ret  [???]\n");\
+    }\
+    print_tabnum--;\
+  } else { \
+    const char *name = get_func_name(next_pc);\
+    if (name != NULL) {\
+      printf(FMT_PADDR, now_pc);\
+      print_tab();\
+      printf("call [%s@" FMT_PADDR "]\n", name, next_pc);\
+    } else {\
+      printf(FMT_PADDR, now_pc);\
+      print_tab();\
+      printf("call [???@" FMT_PADDR "]\n", next_pc);\
+    }\
+    print_tabnum++;\
+  }\
 }
 #endif
 
