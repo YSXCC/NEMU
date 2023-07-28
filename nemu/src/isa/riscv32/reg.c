@@ -28,6 +28,7 @@ void isa_reg_display() {
   for(int i = 1; i < 32; i++){
     printf("$%s\t0x%08x\n", regs[i], cpu.gpr[i]);
   }
+  printf("$pc\t0x%08x\n", cpu.pc);
 }
 
 word_t isa_reg_str2val(const char *s, bool *success) {
