@@ -50,6 +50,23 @@ enum {
   TYPE_N, // none
 };
 
+void csrrwrs(word_t rd, word_t src1, word_t imm, bool temp){
+  word_t t, *ptr = &gpr(0);
+  switch (imm) {
+    case 0x300: ptr = &cpu.csr.mstatus; break;// mstatus
+    case 0x305: ptr = &cpu.csr.mtvec;   break;// mtvec
+    case 0x341: ptr = &cpu.csr.mepc;    break;// mepc
+    case 0x342: ptr = &cpu.csr.mcause;  break;// mcause
+  }
+  t = *ptr;
+  if (temp) {
+    *ptr = src1;
+  } else {
+    *ptr = t | src1;
+  }
+  gpr(rd) = t;
+}
+
 #define src1R() do { *src1 = R(rs1); } while (0)
 #define src2R() do { *src2 = R(rs2); } while (0)
 #define immI() do { *imm = SEXT(BITS(i, 31, 20), 12); } while(0)
@@ -161,6 +178,9 @@ static int decode_exec(Decode *s) {
   INSTPAT("??????? ????? ????? 100 ????? 00100 11", xori   , I, R(rd) = src1 ^ imm);
   INSTPAT("??????? ????? ????? 110 ????? 00100 11", ori    , I, R(rd) = src1 | imm);
   INSTPAT("??????? ????? ????? 010 ????? 00100 11", slti   , I, R(rd) = (sword_t)src1 < (sword_t)imm ? 1 : 0);
+  INSTPAT("??????? ????? ????? 001 ????? 11100 11", csrrw	 , I, csrrwrs(rd, src1, imm, true);IFDEF(CONFIG_ETRACE, Log("etrace: csrrs")));
+  INSTPAT("??????? ????? ????? 010 ????? 11100 11", csrrs	 , I, csrrwrs(rd, src1, imm, false);IFDEF(CONFIG_ETRACE, Log("etrace: csrrs")));
+  INSTPAT("0000000 00000 00000 000 00000 11100 11", ecall	 , I, s->dnpc = isa_raise_intr(cpu.gpr[17], s->pc);IFDEF(CONFIG_ETRACE, Log("etrace: ecall")));
 
   INSTPAT("??????? ????? ????? 010 ????? 01000 11", sw     , S, Mw(src1 + imm, 4, src2));
   INSTPAT("??????? ????? ????? 000 ????? 01000 11", sb     , S, Mw(src1 + imm, 1, src2));
@@ -198,7 +218,7 @@ static int decode_exec(Decode *s) {
   INSTPAT("0000000 ????? ????? 110 ????? 01100 11", or     , R, R(rd) = (src1 | src2));
   INSTPAT("0000000 ????? ????? 111 ????? 01100 11", and    , R, R(rd) = src1 & src2);
 
-
+  INSTPAT("0011000 00010 00000 000 00000 11100 11", mret	 , N, s->dnpc = cpu.csr.mepc+4;IFDEF(CONFIG_ETRACE, Log("etrace: mret")));
   INSTPAT("0000000 00001 00000 000 00000 11100 11", ebreak , N, NEMUTRAP(s->pc, R(10))); // R(10) is $a0
   INSTPAT("??????? ????? ????? ??? ????? ????? ??", inv    , N, INV(s->pc));
   INSTPAT_END();
