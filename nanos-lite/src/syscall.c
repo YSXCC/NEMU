@@ -2,7 +2,27 @@
 #include "syscall.h"
 #include <fs.h>
 
+#define time_t uint64_t
+#define suseconds_t uint64_t
 
+struct timeval {
+  time_t      tv_sec;     /* seconds */
+  suseconds_t tv_usec;    /* microseconds */
+};
+
+struct timezone {
+  int tz_minuteswest;     /* minutes west of Greenwich */
+  int tz_dsttime;         /* type of DST correction */
+};
+
+int sys_gettimeofday(Context *c) {
+  struct timeval *tv = (struct timeval *)c->GPR2;
+  // struct timezone *tz = (struct timezone *)c->GPR3;
+  uint64_t us = io_read(AM_TIMER_UPTIME).us;
+  tv->tv_sec = us / 1000000;
+  tv->tv_usec = us - us / 1000000 * 1000000;
+  return 0;
+}
 
 int sys_yield(){
   yield();
@@ -92,6 +112,9 @@ void do_syscall(Context *c) {
       break;
     case SYS_lseek:
       c->GPRx = sys_lseek(c);
+      break;
+    case SYS_gettimeofday:
+      c->GPRx = sys_gettimeofday(c);
       break;
     default: panic("Unhandled syscall ID = %d", a[0]);
   }

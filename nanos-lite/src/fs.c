@@ -11,7 +11,7 @@ typedef struct {
   WriteFn write;
 } Finfo;
 
-enum {FD_STDIN, FD_STDOUT, FD_STDERR, FD_FB};
+enum {FD_STDIN, FD_STDOUT, FD_STDERR, DEV_EVENTS, PROC_DISPINFO, FD_FB};
 
 size_t invalid_read(void *buf, size_t offset, size_t len) {
   panic("should not reach here");
@@ -26,8 +26,11 @@ size_t invalid_write(const void *buf, size_t offset, size_t len) {
 /* This is the information about all files in disk. */
 static Finfo file_table[] __attribute__((used)) = {
   [FD_STDIN]  = {"stdin", 0, 0, invalid_read, invalid_write},
-  [FD_STDOUT] = {"stdout", 0, 0, invalid_read, invalid_write},
-  [FD_STDERR] = {"stderr", 0, 0, invalid_read, invalid_write},
+  [FD_STDOUT] = {"stdout", 0, 0, invalid_read, serial_write},
+  [FD_STDERR] = {"stderr", 0, 0, invalid_read, serial_write},
+  [DEV_EVENTS] = {"/dev/events", 0, 0, events_read, invalid_write},
+  [PROC_DISPINFO] = {"/proc/dispinfo", 0, 0, dispinfo_read, invalid_write},
+  [FD_FB] = {"/dev/fb", 0, 0, invalid_read, fb_write},
 #include "files.h"
 };
 
@@ -52,6 +55,10 @@ static int get_open_file_index(int fd) { // return -1 on failure
 
 void init_fs() {
   // TODO: initialize the size of /dev/fb
+  AM_GPU_CONFIG_T ev = io_read(AM_GPU_CONFIG);
+  int width = ev.width;
+  int height = ev.height;
+  file_table[FD_FB].size = width * height * 4;
 }
 
 extern size_t ramdisk_read(void *buf, size_t offset, size_t len);
@@ -65,8 +72,10 @@ char* get_file_name(int fd) {
 int fs_open(const char *pathname, int flags, int mode) {
   for (int i = 0; i < LENGTH(file_table); ++i) {
     if (strcmp(file_table[i].name, pathname) == 0) {
-      if (i <= 2) {
+      if (i < FD_FB) {
+        #ifdef STRACE
         Log("ignore open %s", pathname);
+        #endif
         return i;
       }
       open_file_table[open_file_table_index].fd = i;
@@ -80,13 +89,16 @@ int fs_open(const char *pathname, int flags, int mode) {
 }
 
 size_t fs_read(int fd, void *buf, size_t len) {
-  if (fd <= 2) {
-    Log("ignore read %s", file_table[fd].name);
-    return 0;
+  ReadFn readFn = file_table[fd].read;
+  if (readFn != NULL) {
+    return readFn(buf, 0, len);
   }
+
   int target_index = get_open_file_index(fd);
   if (target_index == -1) {
+    #ifdef STRACE
     Log("file %s not open before read", file_table[fd].name);
+    #endif
     return -1;
   }
   size_t read_len = len;
@@ -103,21 +115,17 @@ size_t fs_read(int fd, void *buf, size_t len) {
 }
 
 size_t fs_write(int fd, const void *buf, size_t len) {
-  if (fd == 0) {
-    Log("ignore write %s", file_table[fd].name);
-    return 0;
-  }
-
-  if (fd == 1 || fd == 2) {
-    for (size_t i = 0; i < len; ++i)
-      putch(*((char *)buf + i));
-    return len;
+  WriteFn writeFn = file_table[fd].write;
+  if (writeFn != NULL && fd < FD_FB) {
+    return writeFn(buf, 0, len);
   }
 
   int target_index = get_open_file_index(fd);
 
   if (target_index == -1) {
+    #ifdef STRACE
     Log("file %s not open before write", file_table[fd].name);
+    #endif
     return -1;
   }
 
@@ -129,20 +137,26 @@ size_t fs_write(int fd, const void *buf, size_t len) {
   if (open_offset > size) return 0;
 
   if (open_offset + len > size) write_len = size - open_offset;
+  writeFn ?
+  writeFn      (buf, disk_offset + open_offset, write_len):
   ramdisk_write(buf, disk_offset + open_offset, write_len);
   open_file_table[target_index].open_offset += write_len;
   return write_len;
 }
 
 size_t fs_lseek(int fd, size_t offset, int whence) {
-  if (fd <= 2) {
+  if (fd < FD_FB) {
+    #ifdef STRACE
     Log("ignore lseek %s", file_table[fd].name);
+    #endif
     return 0;
   }
 
   int target_index = get_open_file_index(fd);
   if (target_index == -1) {
+    #ifdef STRACE
     Log("file %s not open before lseek", file_table[fd].name);
+    #endif
     return -1;
   }
 
@@ -173,8 +187,10 @@ size_t fs_lseek(int fd, size_t offset, int whence) {
 }
 
 int fs_close(int fd) {
-  if (fd <= 2) {
+  if (fd <= FD_FB) {
+    #ifdef STRACE
     Log("ignore close %s", file_table[fd].name);
+    #endif
     return 0;
   }
 
@@ -188,7 +204,8 @@ int fs_close(int fd) {
     assert(open_file_table_index >= 0);
     return 0;
   }
-
+  #ifdef STRACE
   Log("file %s not open before close", file_table[fd].name);
+  #endif
   return -1;
 }
